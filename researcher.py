@@ -25,9 +25,18 @@ CACHE_TTL_HOURS = 24
 CHROMA_BASE = "https://api.trychroma.com/api/v2"
 
 
-class ChromaCloudClient:
-    """Minimal Chroma Cloud client using raw REST API — no chromadb package needed."""
+def simple_embedding(text, dim=384):
+    """Deterministic pseudo-embedding from text hash — no ML library needed."""
+    import hashlib, math
+    vec = []
+    for i in range(dim):
+        h = int(hashlib.md5((text + str(i)).encode()).hexdigest(), 16)
+        vec.append((h % 10000) / 10000.0 - 0.5)
+    norm = math.sqrt(sum(x*x for x in vec)) or 1.0
+    return [x / norm for x in vec]
 
+
+class ChromaCloudClient:
     def __init__(self, api_key, tenant, database):
         self.headers = {
             "x-chroma-token": api_key,
@@ -36,21 +45,21 @@ class ChromaCloudClient:
         self.base = "{}/tenants/{}/databases/{}/collections".format(CHROMA_BASE, tenant, database)
 
     def get_or_create_collection(self, name):
-        # Try to get first
         r = requests.get("{}/{}".format(self.base, name), headers=self.headers)
         if r.status_code == 200:
             return r.json()["id"]
-        # Create if not exists
         r = requests.post(self.base, headers=self.headers, json={"name": name})
         r.raise_for_status()
         return r.json()["id"]
 
     def upsert(self, collection_id, ids, documents, metadatas):
+        embeddings = [simple_embedding(doc[:200]) for doc in documents]
         url = "{}/{}/upsert".format(self.base, collection_id)
         r = requests.post(url, headers=self.headers, json={
             "ids": ids,
             "documents": documents,
             "metadatas": metadatas,
+            "embeddings": embeddings,
         })
         r.raise_for_status()
 
