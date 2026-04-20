@@ -1,10 +1,10 @@
 import os
 import json
 import hashlib
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from tavily import TavilyClient
-import chromadb
 
 SEARCH_QUERIES = [
     "{company} ESG rating climate sustainability score",
@@ -22,29 +22,70 @@ TRUSTED_DOMAINS = [
 ]
 
 CACHE_TTL_HOURS = 24
+CHROMA_BASE = "https://api.trychroma.com/api/v2"
+
+
+class ChromaCloudClient:
+    """Minimal Chroma Cloud client using raw REST API — no chromadb package needed."""
+
+    def __init__(self, api_key, tenant, database):
+        self.headers = {
+            "x-chroma-token": api_key,
+            "Content-Type": "application/json",
+        }
+        self.base = "{}/tenants/{}/databases/{}/collections".format(CHROMA_BASE, tenant, database)
+
+    def get_or_create_collection(self, name):
+        # Try to get first
+        r = requests.get("{}/{}".format(self.base, name), headers=self.headers)
+        if r.status_code == 200:
+            return r.json()["id"]
+        # Create if not exists
+        r = requests.post(self.base, headers=self.headers, json={"name": name})
+        r.raise_for_status()
+        return r.json()["id"]
+
+    def upsert(self, collection_id, ids, documents, metadatas):
+        url = "{}/{}/upsert".format(self.base, collection_id)
+        r = requests.post(url, headers=self.headers, json={
+            "ids": ids,
+            "documents": documents,
+            "metadatas": metadatas,
+        })
+        r.raise_for_status()
+
+    def get(self, collection_id, where=None):
+        url = "{}/{}/get".format(self.base, collection_id)
+        body = {"include": ["documents", "metadatas"]}
+        if where:
+            body["where"] = where
+        r = requests.post(url, headers=self.headers, json=body)
+        r.raise_for_status()
+        return r.json()
+
+    def count(self, collection_id):
+        url = "{}/{}/count".format(self.base, collection_id)
+        r = requests.get(url, headers=self.headers)
+        r.raise_for_status()
+        return r.json()
 
 
 class ClimateResearcher:
     def __init__(self):
         self.tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-
-        self.chroma_client = chromadb.HttpClient(
-            host="api.trychroma.com",
-            ssl=True,
-            headers={"x-chroma-token": os.getenv("CHROMA_API_KEY")},
+        self.chroma = ChromaCloudClient(
+            api_key=os.getenv("CHROMA_API_KEY"),
             tenant=os.getenv("CHROMA_TENANT"),
             database=os.getenv("CHROMA_DATABASE"),
         )
-        self.collection = self.chroma_client.get_or_create_collection(
-            name="climate_research",
-        )
+        self.collection_id = self.chroma.get_or_create_collection("climate_research")
 
     def research_company(self, company_name, progress_callback=None, force_refresh=False):
         if not force_refresh:
             cached = self._load_from_cache(company_name)
             if cached:
                 if progress_callback:
-                    progress_callback(1.0, "✅ Loaded from cache ({})".format(cached["cached_at"][:16]))
+                    progress_callback(1.0, "✅ Loaded from Chroma cache ({})".format(cached["cached_at"][:16]))
                 return cached
 
         all_results, seen_urls = [], set()
@@ -68,24 +109,16 @@ class ClimateResearcher:
             progress_callback(0.9, "💾 Storing in Chroma Cloud...")
 
         now_str = datetime.now().isoformat()
-        self._store_in_chroma(company_name, all_results, now_str)
+        self._store(company_name, all_results, now_str)
 
         if progress_callback:
             progress_callback(1.0, "✅ Research complete.")
-
         return {"results": all_results, "from_cache": False, "cached_at": now_str}
-
-    def list_cached_companies(self):
-        try:
-            all_meta = self.collection.get()["metadatas"]
-            return sorted(set(m.get("company", "") for m in all_meta if m.get("company")))
-        except Exception:
-            return []
 
     def _load_from_cache(self, company_name):
         try:
-            res = self.collection.get(where={"company": company_name})
-            if not res["documents"]:
+            res = self.chroma.get(self.collection_id, where={"company": company_name})
+            if not res.get("documents"):
                 return None
             cached_at_str = res["metadatas"][0].get("cached_at", "")
             if cached_at_str:
@@ -106,7 +139,7 @@ class ClimateResearcher:
         except Exception:
             return None
 
-    def _store_in_chroma(self, company_name, results, cached_at):
+    def _store(self, company_name, results, cached_at):
         docs, ids, metas = [], [], []
         for r in results:
             content = r.get("content", "").strip()
@@ -125,4 +158,4 @@ class ClimateResearcher:
                 "query_used": r.get("query_used", ""),
             })
         if docs:
-            self.collection.upsert(documents=docs, ids=ids, metadatas=metas)
+            self.chroma.upsert(self.collection_id, ids, docs, metas)
