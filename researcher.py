@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from tavily import TavilyClient
 import chromadb
-from chromadb.utils import embedding_functions
 
 SEARCH_QUERIES = [
     "{company} ESG rating climate sustainability score",
@@ -29,15 +28,15 @@ class ClimateResearcher:
     def __init__(self):
         self.tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-        self.chroma_client = chromadb.CloudClient(
-            api_key=os.getenv("CHROMA_API_KEY"),
+        self.chroma_client = chromadb.HttpClient(
+            host="api.trychroma.com",
+            ssl=True,
+            headers={"x-chroma-token": os.getenv("CHROMA_API_KEY")},
             tenant=os.getenv("CHROMA_TENANT"),
             database=os.getenv("CHROMA_DATABASE"),
         )
-        self.ef = embedding_functions.DefaultEmbeddingFunction()
         self.collection = self.chroma_client.get_or_create_collection(
             name="climate_research",
-            embedding_function=self.ef,
         )
 
     def research_company(self, company_name, progress_callback=None, force_refresh=False):
