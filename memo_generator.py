@@ -22,12 +22,12 @@ SYSTEM_PROMPT = (
 
 class MemoGenerator:
     def __init__(self):
-        self.api_key = os.getenv("MISTRAL_API_KEY")
-        self.url = "https://api.mistral.ai/v1/chat/completions"
+        self.api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.url = "https://api.anthropic.com/v1/messages"
 
     def generate(self, company_name, research_results, progress_callback=None):
         if progress_callback:
-            progress_callback(0.1, "Preparing context for Mistral...")
+            progress_callback(0.1, "Preparing context for Claude...")
 
         context = "\n".join(
             "[{}] {} | {} | {}".format(i, r.get("title",""), r.get("url",""), r.get("content","")[:600])
@@ -40,17 +40,20 @@ class MemoGenerator:
         )
 
         if progress_callback:
-            progress_callback(0.3, "Mistral is generating the memo...")
+            progress_callback(0.3, "Claude is generating the memo...")
 
         response = requests.post(
             self.url,
-            headers={"Authorization": "Bearer {}".format(self.api_key), "Content-Type": "application/json"},
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
             json={
-                "model": "mistral-large-latest",
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": user_prompt},
-                ],
+                "model": "claude-sonnet-4-5",
+                "max_tokens": 4096,
+                "system": SYSTEM_PROMPT,
+                "messages": [{"role": "user", "content": user_prompt}],
             },
             timeout=60,
         )
@@ -59,7 +62,7 @@ class MemoGenerator:
         if progress_callback:
             progress_callback(0.9, "Parsing memo...")
 
-        raw = response.json()["choices"][0]["message"]["content"].strip()
+        raw = response.json()["content"][0]["text"].strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
 
         try:
