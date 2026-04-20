@@ -50,7 +50,7 @@ st.markdown("""
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
-    anthropic_key = st.text_input("Anthropic API Key", value=os.getenv("ANTHROPIC_API_KEY",""), type="password")
+    anthropic_key = st.text_input("Anthropic API Key", value="", type="password")
     tavily_key    = st.text_input("Tavily API Key",    value=os.getenv("TAVILY_API_KEY",""),   type="password")
     if anthropic_key: os.environ["ANTHROPIC_API_KEY"] = anthropic_key
     if tavily_key:    os.environ["TAVILY_API_KEY"]    = tavily_key
