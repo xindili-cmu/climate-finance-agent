@@ -50,14 +50,15 @@ class MemoGenerator:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "claude-sonnet-4-5",
+                "model": "claude-sonnet-5-5",
                 "max_tokens": 4096,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": user_prompt}],
             },
             timeout=60,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise RuntimeError("Claude API {}: {}".format(response.status_code, response.text[:300]))
 
         if progress_callback:
             progress_callback(0.9, "Parsing memo...")
