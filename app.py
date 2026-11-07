@@ -50,9 +50,8 @@ st.markdown("""
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
-    anthropic_key = st.text_input("Anthropic API Key", value="", type="password")
+    anthropic_key = st.text_input("LLM API Key (Claude or Gemini)", value="", type="password", help="Claude keys start with sk-ant-, Gemini keys with AIza. Your key is only used for this session.").strip()
     tavily_key    = st.text_input("Tavily API Key",    value=os.getenv("TAVILY_API_KEY",""),   type="password")
-    if anthropic_key: os.environ["ANTHROPIC_API_KEY"] = anthropic_key
     if tavily_key:    os.environ["TAVILY_API_KEY"]    = tavily_key
     st.divider()
     st.markdown("### 🛡️ Guardrails Policy")
@@ -61,7 +60,7 @@ with st.sidebar:
     st.markdown("**Memos below this threshold will be flagged and must be verified by a human expert before any investment decision.**")
     st.divider()
     st.markdown("### ℹ️ Stack")
-    st.markdown("**Search:** Tavily  \n**Storage:** ChromaDB  \n**LLM:** Claude Opus  \n**UI:** Streamlit")
+    st.markdown("**Search:** Tavily  \n**Storage:** ChromaDB  \n**LLM:** Claude or Gemini (auto-detected)  \n**UI:** Streamlit")
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown('<div class="hero-title">🌍 Climate Finance Research Agent</div>', unsafe_allow_html=True)
@@ -86,8 +85,11 @@ if "cached_at" not in st.session_state:
 
 # ── Run pipeline ───────────────────────────────────────────────────────────────
 if run and company.strip():
-    if not os.getenv("ANTHROPIC_API_KEY") or not os.getenv("TAVILY_API_KEY"):
-        st.error("Please enter your API keys in the sidebar first.")
+    if not anthropic_key:
+        st.error("Please enter your own Claude or Gemini API key in the sidebar first.")
+        st.stop()
+    if not os.getenv("TAVILY_API_KEY"):
+        st.error("Please enter a Tavily API key in the sidebar first.")
         st.stop()
 
     st.divider()
@@ -104,8 +106,8 @@ if run and company.strip():
         results    = research["results"]
         from_cache = research["from_cache"]
         cached_at  = research.get("cached_at","")
-        generator  = MemoGenerator()
         try:
+            generator  = MemoGenerator(api_key=anthropic_key)
             memo   = generator.generate(company.strip(), results, progress_callback=cb)
         except Exception as e:
             bar.empty()
