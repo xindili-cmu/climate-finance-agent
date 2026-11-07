@@ -105,7 +105,13 @@ if run and company.strip():
         from_cache = research["from_cache"]
         cached_at  = research.get("cached_at","")
         generator  = MemoGenerator()
-        memo       = generator.generate(company.strip(), results, progress_callback=cb)
+        try:
+            memo   = generator.generate(company.strip(), results, progress_callback=cb)
+        except Exception as e:
+            bar.empty()
+            status.empty()
+            st.error("Memo generation failed: {}".format(e))
+            st.stop()
         assessor   = GuardrailsAssessor()
         assessor.CONFIDENCE_FLOOR = confidence_threshold
         gr         = assessor.assess(memo, results)
