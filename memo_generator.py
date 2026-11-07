@@ -26,12 +26,8 @@ _SKIP = ("lite", "image", "tts", "live", "audio", "embedding", "vision", "thinki
 
 
 def detect_provider(api_key):
-    """Anthropic keys start with sk-ant-, Google AI Studio keys with AIza."""
-    if api_key.startswith("sk-ant-"):
-        return "claude"
-    if api_key.startswith("AIza"):
-        return "gemini"
-    raise RuntimeError("Unrecognized API key. Use a Claude key (sk-ant-...) or a Gemini key (AIza...).")
+    """Anthropic keys start with sk-ant-; anything else is tried as a Gemini key."""
+    return "claude" if api_key.startswith("sk-ant-") else "gemini"
 
 
 def _pick_gemini_model(api_key):
@@ -39,7 +35,9 @@ def _pick_gemini_model(api_key):
     r = requests.get(GEMINI_BASE + "/models", headers={"x-goog-api-key": api_key},
                      params={"pageSize": 1000}, timeout=20)
     if not r.ok:
-        raise RuntimeError("Gemini API {}: {}".format(r.status_code, r.text[:300]))
+        raise RuntimeError(
+            "This key (starts with '{}', {} chars) is not a Claude key and Gemini rejected it. "
+            "Gemini API {}: {}".format(api_key[:4], len(api_key), r.status_code, r.text[:300]))
     names = [m["name"].split("/", 1)[-1] for m in r.json().get("models", [])
              if "generateContent" in m.get("supportedGenerationMethods", [])]
     if "gemini-flash-latest" in names:
